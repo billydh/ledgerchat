@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { search, summary } from '../../src/tools/registry.js';
+import type { search } from '../../src/tools/registry.js';
 import { openMemoryDb, type Db } from '../../src/db/client.js';
 import type { LlmBackend } from '../../src/llm/backend.js';
 import { getCapabilities } from '../../src/llm/capabilities.js';
@@ -154,7 +154,7 @@ it('sanitises backend exceptions', async () => {
   expect(result.failed).toBe(true);
 });
 
-it('executes scripted filtered totals and comparison calls and returns computed figures', async () => {
+it('renders a spending comparison from the tool result without asking the model for figures', async () => {
   const { upsertAccount, upsertTransactions } = await import('../../src/db/repo.js');
   upsertAccount(db, { source: 'test', externalId: 'a', name: 'Test', currency: 'AUD', raw: {} });
   upsertTransactions(
@@ -172,38 +172,188 @@ it('executes scripted filtered totals and comparison calls and returns computed 
       raw: {},
     })),
   );
-  let invocation = 0;
+  const complete = vi.fn(async () => {
+    await Promise.resolve();
+    return turn([
+      call('get_spending_summary', {
+        query: 'woolworths',
+        period: 'last_month',
+        group_by: 'merchant',
+        compare_from: '2026-07-01',
+        compare_to: '2026-07-31',
+      }),
+    ]);
+  });
   const result = await runConversation({
     db,
     now: new Date('2026-09-10T12:00:00Z'),
     messages: [{ role: 'user', text: 'Woolworths spending last month compared with July?' }],
-    backend: backend(async (req) => {
-      await Promise.resolve();
-      if (invocation++ === 0)
-        return turn([
-          call('get_spending_summary', {
-            query: 'woolworths',
-            period: 'last_month',
-            group_by: 'merchant',
-            compare_from: '2026-07-01',
-            compare_to: '2026-07-31',
-          }),
-        ]);
-      const message = req.messages.at(-1);
-      expect(message?.role).toBe('tool');
-      if (message?.role !== 'tool') throw new Error('Missing result');
-      const data = JSON.parse(message.results[0]!.content) as ReturnType<typeof summary>;
-      expect(data.totals[0]!.total.decimal).toBe('150.00');
-      expect(data.comparison!.totals[0]!.change.decimal).toBe('50.00');
-      expect(data.comparison!.totals[0]!.percentage_change).toBe(50);
-      return {
-        ...turn(),
-        text: `Spending was AUD ${data.totals[0]!.total.decimal}, up AUD ${data.comparison!.totals[0]!.change.decimal} (${data.comparison!.totals[0]!.percentage_change}%).`,
-      };
-    }),
+    backend: backend(complete),
   });
   expect(result.failed).toBe(false);
-  expect(result.text).toBe('Spending was AUD 150.00, up AUD 50.00 (50%).');
+  expect(complete).toHaveBeenCalledTimes(1);
+  expect(result.text).toContain('AUD 150.00');
+  expect(result.text).toContain('AUD 100.00');
+  expect(result.text).toContain('AUD 50.00 more');
+  expect(result.text).toContain('1 Aug 2026 to 31 Aug 2026');
+  expect(result.text).toContain('1 July 2026 to 31 July 2026');
+  expect(result.text).not.toContain('50%');
+});
+
+it('does not render a named merchant comparison until the tool includes its query filter', async () => {
+  const { upsertAccount, upsertTransactions } = await import('../../src/db/repo.js');
+  upsertAccount(db, { source: 'test', externalId: 'a', name: 'Test', currency: 'AUD', raw: {} });
+  upsertTransactions(
+    db,
+    [
+      ['2026-07-15', 'woolworths', -10000],
+      ['2026-07-16', 'cafe', -5000],
+      ['2026-08-15', 'woolworths', -15000],
+      ['2026-08-16', 'cafe', -7500],
+    ].map(([date, description, cents], index) => ({
+      source: 'test',
+      externalId: String(index),
+      accountExternalId: 'a',
+      postedAt: `${String(date)}T00:00:00Z`,
+      amountCents: Number(cents),
+      currency: 'AUD',
+      descriptionRaw: String(description),
+      descriptionNorm: String(description),
+      status: 'posted' as const,
+      raw: {},
+    })),
+  );
+  let turnIndex = 0;
+  const complete = vi.fn(async () => {
+    await Promise.resolve();
+    return turn([
+      call('get_spending_summary', {
+        group_by: 'merchant',
+        from: '2026-08-01',
+        to: '2026-08-31',
+        compare_from: '2026-07-01',
+        compare_to: '2026-07-31',
+        ...(turnIndex++ === 0 ? {} : { query: 'woolworths' }),
+      }),
+    ]);
+  });
+  const result = await runConversation({
+    db,
+    messages: [
+      { role: 'user', text: 'How did my Woolworths spending change between July and August 2026?' },
+    ],
+    backend: backend(complete),
+  });
+  expect(result.failed).toBe(false);
+  expect(complete).toHaveBeenCalledTimes(2);
+  expect(result.text).toContain('AUD 100.00');
+  expect(result.text).toContain('AUD 150.00');
+  expect(result.text).toContain('AUD 50.00 more');
+  expect(result.text).not.toContain('AUD 225.00');
+});
+
+it('lets the model finish an unsupported multi-part question after a comparison result', async () => {
+  const complete = vi
+    .fn()
+    .mockResolvedValueOnce(
+      turn([
+        call('get_spending_summary', {
+          category: 'food_drink',
+          group_by: 'merchant',
+          from: '2026-08-01',
+          to: '2026-08-31',
+          compare_from: '2026-07-01',
+          compare_to: '2026-07-31',
+        }),
+      ]),
+    )
+    .mockResolvedValueOnce({
+      ...turn(),
+      text: 'No posted food spending or transactions were found.',
+    });
+  const result = await runConversation({
+    db,
+    messages: [
+      {
+        role: 'user',
+        text: 'Compare food spending in July and August 2026, and list my latest transactions.',
+      },
+    ],
+    backend: backend(complete),
+  });
+  expect(result.failed).toBe(false);
+  expect(complete).toHaveBeenCalledTimes(2);
+  expect(result.text).toContain('transactions');
+});
+
+it('answers a comparison and ranked merchant descriptions from one grouped tool result', async () => {
+  const { upsertAccount, upsertTransactions } = await import('../../src/db/repo.js');
+  upsertAccount(db, { source: 'test', externalId: 'a', name: 'Test', currency: 'AUD', raw: {} });
+  upsertTransactions(
+    db,
+    [
+      ['2026-07-15', 'woolworths', -90000],
+      ['2026-07-16', 'cafe', -32632],
+      ['2026-08-15', 'woolworths', -150000],
+      ['2026-08-16', 'cafe', -36940],
+    ].map(([date, description, cents], index) => ({
+      source: 'test',
+      externalId: String(index),
+      accountExternalId: 'a',
+      postedAt: `${String(date)}T00:00:00Z`,
+      amountCents: Number(cents),
+      currency: 'AUD',
+      descriptionRaw: String(description),
+      descriptionNorm: String(description),
+      status: 'posted' as const,
+      raw: {},
+    })),
+  );
+  const complete = vi.fn().mockResolvedValue(
+    turn([
+      call('get_spending_summary', {
+        group_by: 'merchant',
+        from: '2026-08-01',
+        to: '2026-08-31',
+        compare_from: '2026-07-01',
+        compare_to: '2026-07-31',
+      }),
+    ]),
+  );
+  const result = await runConversation({
+    db,
+    messages: [
+      { role: 'user', text: 'Compare spending in July and August 2026, and list top merchants.' },
+    ],
+    backend: backend(complete),
+  });
+  expect(result.failed).toBe(false);
+  expect(complete).toHaveBeenCalledTimes(1);
+  expect(result.text).toContain('AUD 643.08 more');
+  expect(result.text).toContain('woolworths: **AUD 1,500.00**');
+  expect(result.text).toContain('cafe: **AUD 369.40**');
+});
+
+it('withholds free-form spending comparison figures when no comparison result was supplied', async () => {
+  const complete = vi.fn().mockResolvedValue({
+    ...turn(),
+    text: 'August was $3,095.72 and July was $1,226.32, so the increase was $1,869.40.',
+  });
+  const events: ChatEvent[] = [];
+  const result = await runConversation({
+    db,
+    messages: [{ role: 'user', text: 'How much more did I spend in August than July?' }],
+    backend: backend(complete),
+    onEvent: (event) => events.push(event),
+  });
+  expect(result.reason).toBe('unverified_answer');
+  expect(result.failed).toBe(true);
+  expect(result.text).not.toContain('$');
+  expect(complete).toHaveBeenCalledTimes(2);
+  expect(events.filter((event) => event.type === 'text')).toEqual([]);
+  expect(events.filter((event) => event.type === 'retry')).toEqual([
+    { type: 'retry', reason: 'comparison_needs_tool' },
+  ]);
 });
 
 it.each([
@@ -224,6 +374,131 @@ it.each([
     }),
   });
   expect(result.failed).toBe(false);
+});
+
+it('renders a requested account balance directly from list_accounts', async () => {
+  const { upsertAccount, insertBalances } = await import('../../src/db/repo.js');
+  const id = upsertAccount(db, {
+    source: 'test',
+    externalId: 'a',
+    name: 'Everyday',
+    currency: 'AUD',
+    raw: {},
+  });
+  insertBalances(db, [
+    {
+      accountId: id,
+      asOf: '2026-09-11T05:00:00.000Z',
+      currentCents: 74777,
+      currency: 'AUD',
+      raw: {},
+    },
+  ]);
+  const complete = vi.fn().mockResolvedValue(turn([call('list_accounts', {})]));
+  const result = await runConversation({
+    db,
+    messages: [{ role: 'user', text: 'What is my Everyday card balance?' }],
+    backend: backend(complete),
+  });
+  expect(result.failed).toBe(false);
+  expect(complete).toHaveBeenCalledTimes(1);
+  expect(result.text).toContain('Everyday: current **AUD 747.77** as of 11 Sept 2026');
+});
+
+it('rejects a wrong cash-flow period before rendering labeled metrics', async () => {
+  const { upsertAccount, upsertTransactions } = await import('../../src/db/repo.js');
+  upsertAccount(db, {
+    source: 'test',
+    externalId: 'a',
+    name: 'Everyday',
+    currency: 'AUD',
+    raw: {},
+  });
+  upsertTransactions(
+    db,
+    [
+      ['2026-08-10', 20000],
+      ['2026-08-12', -10000],
+    ].map(([day, cents], index) => ({
+      source: 'test',
+      externalId: String(index),
+      accountExternalId: 'a',
+      postedAt: `${String(day)}T00:00:00Z`,
+      amountCents: Number(cents),
+      currency: 'AUD',
+      descriptionRaw: String(index),
+      descriptionNorm: String(index),
+      status: 'posted' as const,
+      raw: {},
+    })),
+  );
+  let attempt = 0;
+  const complete = vi.fn(() =>
+    Promise.resolve(
+      turn([
+        call('get_cash_flow', {
+          period: attempt++ === 0 ? 'this_month' : 'last_month',
+        }),
+      ]),
+    ),
+  );
+  const result = await runConversation({
+    db,
+    now: new Date('2026-09-23T12:00:00Z'),
+    messages: [{ role: 'user', text: 'What actually came in and went out last month?' }],
+    backend: backend(complete),
+  });
+  expect(result.failed).toBe(false);
+  expect(complete).toHaveBeenCalledTimes(2);
+  expect(result.text).toContain('incoming credits: **AUD 200.00**');
+  expect(result.text).toContain('outgoing debits: **AUD 100.00**');
+  expect(result.text).toContain('net flow: **AUD 100.00**');
+  expect(result.text).toContain('1 Aug 2026 to 31 Aug 2026');
+});
+
+it('withholds a direct balance claim when the model skips list_accounts', async () => {
+  const events: ChatEvent[] = [];
+  const complete = vi.fn().mockResolvedValue({
+    ...turn(),
+    text: 'The balance in Everyday is AUD 747.77.',
+  });
+  const result = await runConversation({
+    db,
+    messages: [{ role: 'user', text: 'What is my Everyday balance?' }],
+    backend: backend(complete),
+    onEvent: (event) => events.push(event),
+  });
+  expect(result.failed).toBe(true);
+  expect(result.reason).toBe('unverified_answer');
+  expect(complete).toHaveBeenCalledTimes(2);
+  expect(events.filter((event) => event.type === 'text')).toEqual([]);
+  expect(events.filter((event) => event.type === 'retry')).toEqual([
+    { type: 'retry', reason: 'direct_answer_needs_tool' },
+  ]);
+});
+
+it('does not present missing imported coverage as zero spending', async () => {
+  const complete = vi.fn().mockResolvedValue(
+    turn([
+      call('get_spending_summary', {
+        group_by: 'category',
+        from: '2026-08-01',
+        to: '2026-08-31',
+        compare_from: '2026-07-01',
+        compare_to: '2026-07-31',
+      }),
+    ]),
+  );
+  const result = await runConversation({
+    db,
+    messages: [{ role: 'user', text: 'Compare spending in July and August 2026.' }],
+    backend: backend(complete),
+  });
+  expect(result.failed).toBe(false);
+  expect(complete).toHaveBeenCalledTimes(1);
+  expect(result.text).toContain('No imported transactions overlap');
+  expect(result.text).toContain('comparison for these periods is unavailable');
+  expect(result.text).not.toContain('AUD 0.00');
 });
 
 it('passes a search cursor through a scripted second-page conversation', async () => {
@@ -578,6 +853,14 @@ it('takes money and percentages only from typed result fields, with currency and
   expect(unevidencedFigures('USD $25.99', [result])).toEqual(['$25.99']);
   expect(unevidencedFigures('16 transactions over 15 days in 2026.', [])).toEqual([]);
   expect(unevidencedFigures('£1,363 last quarter', [])).toEqual(['£1,363']);
+});
+it('checks the direction of a percentage change against the signed tool result', () => {
+  const result = JSON.stringify({ percentage_change: -34.4 });
+  expect(unevidencedFigures('Spending fell 34.4%.', [result])).toEqual([]);
+  expect(unevidencedFigures('That is a 34.4% decrease.', [result])).toEqual([]);
+  expect(unevidencedFigures('That is a 34.4% increase.', [result])).toEqual(['34.4%']);
+  expect(unevidencedFigures('Spending changed by +34.4%.', [result])).toEqual(['+34.4%']);
+  expect(unevidencedFigures('Spending changed by -34.4%.', [result])).toEqual([]);
 });
 it('does not treat the user or an earlier model answer as tool evidence', async () => {
   const messages: ChatMessage[] = [

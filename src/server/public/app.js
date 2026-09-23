@@ -459,14 +459,18 @@ $('chat').addEventListener('submit', async (event) => {
         streamed += event.text;
         if (streamed.trim()) renderAnswer(assistant.body, streamed);
       } else if (event.type === 'retry') {
-        // The answer included a figure unsupported by this request's tools.
+        // The answer could not be tied to the required tool result.
         streamed = '';
         assistant.body.replaceChildren();
         trace.details.hidden = false;
         trace.details.open = true;
         traceNote(
           trace,
-          'Answer withheld: a money amount or percentage was absent from the tool results. Asking again with the tools.',
+          event.reason === 'comparison_needs_tool'
+            ? 'Answer withheld: a spending comparison needs one tool result with both periods. Asking again.'
+            : event.reason === 'direct_answer_needs_tool'
+              ? 'Answer withheld: the account balance or cash flow needs a matching tool result. Asking again.'
+              : 'Answer withheld: a numerical claim was unsupported by the tool results. Asking again.',
         );
       } else if (event.type === 'tool_call') {
         // Steps stay open while the model is working, so the reader can
@@ -1909,9 +1913,10 @@ async function categoriseAccounts() {
       if (event.type === 'progress')
         state.textContent = `${event.categorised} of ${event.total} descriptions labelled (${event.batch}/${event.batches} batches).`;
       else if (event.type === 'done')
-        state.textContent = event.new_descriptions === 0
-          ? 'Nothing new to label.'
-          : `Labelled ${event.categorised} of ${event.new_descriptions} descriptions${event.failures ? `; ${event.failures} batches failed. Run again to resume.` : '.'}`;
+        state.textContent =
+          event.new_descriptions === 0
+            ? 'Nothing new to label.'
+            : `Labelled ${event.categorised} of ${event.new_descriptions} descriptions${event.failures ? `; ${event.failures} batches failed. Run again to resume.` : '.'}`;
     });
   } catch (error) {
     state.textContent = error.message;

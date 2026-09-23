@@ -30,7 +30,7 @@ async function main() {
       onEvent: (event) => {
         if (event.type === 'text') process.stdout.write(event.text);
         if (event.type === 'retry')
-          process.stdout.write('\n[answer withheld: no ledger data was read; asking again]\n');
+          process.stdout.write('\n[answer withheld: asking the model for verifiable data]\n');
         if (event.type === 'error') console.error(`\n${event.error}`);
       },
     });

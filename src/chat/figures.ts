@@ -4,9 +4,10 @@
  * values count as evidence; arbitrary numbers in IDs, dates, descriptions,
  * user messages and earlier model answers do not.
  *
- * This checks the value, not whether the model attached it to the right
- * merchant, period or metric. Full provenance needs structured fact references
- * rendered by the application rather than free-form model text.
+ * This checks the value and an explicit percentage direction, not whether the
+ * model attached a figure to the right merchant, period or metric. Full
+ * provenance needs structured fact references rendered by the application
+ * rather than free-form model text.
  */
 const MONEY_PREFIX =
   /(?<![\w])(?:A\$|US\$|NZ\$|C\$|[$£€¥]|\b(?:AUD|USD|GBP|EUR|NZD|CAD|JPY|SGD|CHF|INR|HKD|ZAR)\b)\s*([+-]?\d[\d,]*(?:\.\d+)?)/gi;
@@ -41,7 +42,7 @@ function toolFigures(results: readonly string[]) {
       money.push(figure);
     }
     if (typeof fields.percentage_change === 'number' && Number.isFinite(fields.percentage_change))
-      percentages.push(Math.abs(fields.percentage_change));
+      percentages.push(fields.percentage_change);
     for (const child of Object.values(fields)) visit(child, currency);
   };
   for (const content of results) {
@@ -82,7 +83,25 @@ function matches(value: number, raw: string, candidates: readonly number[]): boo
   return candidates.some((candidate) => Math.abs(candidate - Math.abs(value)) < tolerance);
 }
 
-/** Monetary amounts and percentages absent from successful tool results in this request. */
+function percentageDirection(text: string, match: RegExpMatchArray): -1 | 1 | undefined {
+  const raw = match[1]!;
+  if (raw.startsWith('-')) return -1;
+  if (raw.startsWith('+')) return 1;
+  const start = match.index ?? 0;
+  const before =
+    text
+      .slice(Math.max(0, start - 24), start)
+      .split(/[.!?;\n]/)
+      .at(-1) ?? '';
+  const after =
+    text.slice(start + match[0].length, start + match[0].length + 24).split(/[.!?;\n]/)[0] ?? '';
+  const context = `${before} ${after}`;
+  const up = /\b(?:increase|increased|rises?|rose|higher|more|up)\b/i.test(context);
+  const down = /\b(?:decrease|decreased|falls?|fell|lower|less|down)\b/i.test(context);
+  return up === down ? undefined : up ? 1 : -1;
+}
+
+/** Monetary and percentage claims unsupported by successful tool results in this request. */
 export function unevidencedFigures(text: string, results: readonly string[]): string[] {
   const evidence = toolFigures(results);
   const missing = new Set<string>();
@@ -106,7 +125,12 @@ export function unevidencedFigures(text: string, results: readonly string[]): st
   }
   for (const match of text.matchAll(PERCENT)) {
     const raw = match[1]!;
-    if (!matches(Number(raw.replaceAll(',', '')), raw, evidence.percentages)) missing.add(match[0]);
+    const value = Number(raw.replaceAll(',', ''));
+    const direction = percentageDirection(text, match);
+    const candidates = evidence.percentages
+      .filter((candidate) => direction === undefined || Math.sign(candidate) === direction)
+      .map(Math.abs);
+    if (!matches(value, raw, candidates)) missing.add(match[0]);
   }
   return [...missing];
 }

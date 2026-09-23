@@ -84,13 +84,25 @@ rather than duplicating them. Details are in [docs/import.md](docs/import.md).
 Six tools, all read-only over SQLite: `list_accounts`, `search_transactions`,
 `get_spending_summary`, `get_cash_flow`, `get_recurring_charges` and
 `get_upcoming_payments`. The prompt asks the model to quote tool results
-instead of calculating totals. Before showing a final answer, ledgerchat checks
-that its currency amounts and percentages match typed values returned by tools
-in that request; it withholds unsupported figures and gives the model one
-chance to correct them. The loop also stops exact repeated calls and caps a
-request at eight turns. This value check cannot prove that a supported amount
-was attributed to the right merchant, category or period, so inspect the shown
-tool calls for decisions that matter.
+instead of calculating totals. For straightforward spending comparisons,
+ledgerchat renders the dated totals, change and any requested percentage from a
+single `get_spending_summary` result. If the model does not supply that result,
+it withholds the comparison. It also checks named categories and descriptions,
+account and transfer filters, and relative or explicit date ranges against the
+tool windows. Yearless month names resolve to their most recent occurrence in
+UTC; the current month ends today. If imported transactions do not overlap a
+requested period, the comparison is unavailable rather than treated as zero.
+A comparison that also asks for top merchants uses the tool's merchant grouping
+and labels the ranked results as transaction descriptions. Direct balance and
+cash-flow answers are also rendered from their tool results, with amounts tied
+to the account or dated metric. Other answers pass a
+narrower check: their currency
+amounts and percentages must match typed values returned by tools in that
+request, or the answer is withheld and the model gets one chance to correct it.
+The loop also stops exact repeated calls and caps a request at eight turns.
+Outside the application-rendered comparisons, the value check cannot prove that
+a supported amount was attributed to the right merchant, category or period,
+so inspect the shown tool calls for decisions that matter.
 
 Labels are a two-level taxonomy (13 categories, 38 subcategories) applied once
 per distinct description and correctable in Transactions; see

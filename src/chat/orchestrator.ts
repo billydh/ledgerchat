@@ -8,8 +8,16 @@ import {
   type Usage,
 } from '../llm/types.js';
 import { executeTool, toolDefs } from '../tools/registry.js';
+import { asksForSpendingComparison, renderSpendingComparison } from './comparison.js';
 import { unevidencedFigures } from './figures.js';
 import { systemPrompt } from './prompt.js';
+import {
+  asksForDirectBalance,
+  asksForDirectCashFlow,
+  renderBalances,
+  renderCashFlow,
+  requestedCashFlowWindow,
+} from './verified-answers.js';
 export { unevidencedFigures } from './figures.js';
 export interface Trace {
   backendLabel: string;
@@ -32,10 +40,7 @@ export interface Trace {
     repeatedCalls?: RepeatedCall[];
     latencyMs: number;
     usage: Usage;
-    /**
-     * The turn quoted a monetary amount or percentage absent from this
-     * request's successful tool results and was withheld.
-     */
+    /** The turn lacked required numerical evidence and was withheld. */
     unverified?: true;
   }[];
 }
@@ -57,7 +62,7 @@ export const LOOP_LIMITS = Object.freeze({
   maxErrorBatches: 3,
   /** Occurrences of one exact call before `repeated_call`. */
   repeatLimit: 3,
-  /** Unevidenced answers quoting figures before `unverified_answer`. */
+  /** Answers without required numerical evidence before `unverified_answer`. */
   unverifiedLimit: 2,
 });
 export type TerminationReason =
@@ -74,7 +79,10 @@ export type TerminationReason =
 export type ChatEvent =
   | { type: 'text'; text: string }
   /** The streamed answer was withheld and the model is being asked again. */
-  | { type: 'retry'; reason: 'unverified_figures' }
+  | {
+      type: 'retry';
+      reason: 'unverified_figures' | 'comparison_needs_tool' | 'direct_answer_needs_tool';
+    }
   | { type: 'tool_call'; call: ToolCall }
   | { type: 'tool_result'; result: ToolResult }
   | { type: 'error'; error: string }
@@ -103,9 +111,15 @@ function canonical(value: unknown): string {
     .join(',')}}`;
 }
 const EVIDENCE_NUDGE =
-  'Your answer quoted a money amount or percentage absent from the successful tool results in this request. Read the relevant data with a tool now and quote only its money or percentage fields. Do not calculate or invent figures. If the tool returns no such figure, explain that without stating an amount.';
+  'Your answer quoted a money amount or percentage absent from the successful tool results in this request, or described a percentage change in the wrong direction. Read the relevant data with a tool now and quote only its money or percentage fields with the correct direction. Do not calculate or invent figures. If the tool returns no such figure, explain that without stating an amount.';
 export const UNVERIFIED_ANSWER_MESSAGE =
-  "The model quoted a money amount or percentage unsupported by this request's tool results, so the answer was withheld. Try naming the period, category or merchant you mean.";
+  "The model made a numerical claim unsupported by this request's tool results, so the answer was withheld. Try naming the period, category or merchant you mean.";
+const COMPARISON_NUDGE =
+  'This is a spending comparison. Call get_spending_summary once with both the primary and compare window, including the requested filters. The application will render the dated totals and change. Do not answer from separate totals or calculate the difference yourself.';
+const COMPARISON_UNVERIFIED_MESSAGE =
+  'The model did not provide one verifiable spending comparison, so the answer was withheld. Try naming both periods and the category or merchant.';
+const DIRECT_ANSWER_UNVERIFIED_MESSAGE =
+  'The model did not provide the matching account or cash-flow result, so the numerical answer was withheld. Try naming the account and period.';
 export interface ConversationOptions {
   backend: LlmBackend;
   db: Db;
@@ -128,6 +142,10 @@ export async function runConversation({
   let errorBatches = 0,
     unverified = 0;
   const record: string[] = [];
+  const question = [...initial].reverse().find((message) => message.role === 'user');
+  const comparisonWanted = question?.role === 'user' && asksForSpendingComparison(question.text);
+  const balanceWanted = question?.role === 'user' && asksForDirectBalance(question.text);
+  const cashFlowWanted = question?.role === 'user' && asksForDirectCashFlow(question.text);
   // Signature state lives for this request only, so the same question asked
   // again later in the conversation is executed afresh.
   const seen = new Map<string, { occurrences: number; result: ToolResult; turn: number }>();
@@ -136,6 +154,12 @@ export async function runConversation({
     onEvent({ type: 'done', text, trace, failed });
     return { text, trace, failed, reason, messages };
   };
+  if (cashFlowWanted && question?.role === 'user' && !requestedCashFlowWindow(question.text, now))
+    return finish(
+      'Please specify a cash-flow period I can verify: last month, this month, last 30 days, year to date, a month and year, or two YYYY-MM-DD dates.',
+      false,
+      'answered',
+    );
   try {
     for (let i = 0; i < LOOP_LIMITS.maxTurns; i++) {
       signal?.throwIfAborted();
@@ -165,6 +189,27 @@ export async function runConversation({
       trace.turns.push(entry);
       // Preserve the exact returned array: adapters key signed thinking state by identity.
       messages.push({ role: 'assistant', text: turn.text, toolCalls: turn.toolCalls });
+      if (turn.stopReason === 'end' && comparisonWanted) {
+        entry.unverified = true;
+        if (++unverified >= LOOP_LIMITS.unverifiedLimit)
+          return finish(COMPARISON_UNVERIFIED_MESSAGE, true, 'unverified_answer');
+        messages.push({ role: 'user', text: COMPARISON_NUDGE });
+        onEvent({ type: 'retry', reason: 'comparison_needs_tool' });
+        continue;
+      }
+      if (turn.stopReason === 'end' && (balanceWanted || cashFlowWanted)) {
+        entry.unverified = true;
+        if (++unverified >= LOOP_LIMITS.unverifiedLimit)
+          return finish(DIRECT_ANSWER_UNVERIFIED_MESSAGE, true, 'unverified_answer');
+        messages.push({
+          role: 'user',
+          text: balanceWanted
+            ? 'Call list_accounts so the application can render each balance with its account and as-of date.'
+            : 'Call get_cash_flow for the requested period and account. The application will render each metric from that result.',
+        });
+        onEvent({ type: 'retry', reason: 'direct_answer_needs_tool' });
+        continue;
+      }
       if (turn.stopReason === 'end' && unevidencedFigures(turn.text, record).length > 0) {
         entry.unverified = true;
         if (++unverified >= LOOP_LIMITS.unverifiedLimit)
@@ -241,6 +286,62 @@ export async function runConversation({
         onEvent({ type: 'tool_result', result });
       }
       messages.push({ role: 'tool', results });
+      // A simple spending comparison is rendered from the dated tool result.
+      // The model never gets a chance to relabel a total as a change or swap
+      // the two windows in its final prose.
+      const comparisonResults = turn.toolCalls.flatMap((call, index) =>
+        call.name === 'get_spending_summary' && !results[index]!.isError
+          ? [{ content: results[index]!.content, input: call.rawInput }]
+          : [],
+      );
+      if (comparisonWanted && comparisonResults.length) {
+        const descriptions = db
+          .prepare<[], { description_norm: string }>(
+            'SELECT DISTINCT description_norm FROM transactions',
+          )
+          .all()
+          .map((row) => row.description_norm);
+        const accounts = db
+          .prepare<[], { id: number; name: string }>('SELECT id, name FROM accounts')
+          .all();
+        for (const candidate of comparisonResults) {
+          const input = candidate.input;
+          const groupBy =
+            input && typeof input === 'object' && 'group_by' in input
+              ? String(input.group_by)
+              : undefined;
+          const rendered = renderSpendingComparison(question.text, candidate.content, {
+            descriptions,
+            accounts,
+            now,
+            ...(groupBy ? { groupBy } : {}),
+          });
+          if (rendered) {
+            messages.push({ role: 'assistant', text: rendered, toolCalls: [] });
+            onEvent({ type: 'text', text: rendered });
+            return finish(rendered, false, 'answered');
+          }
+        }
+      }
+      if (balanceWanted || cashFlowWanted) {
+        const accounts = cashFlowWanted
+          ? db.prepare<[], { id: number; name: string }>('SELECT id, name FROM accounts').all()
+          : [];
+        for (const [index, call] of turn.toolCalls.entries()) {
+          if (results[index]!.isError) continue;
+          const rendered =
+            balanceWanted && call.name === 'list_accounts'
+              ? renderBalances(question.text, results[index]!.content)
+              : cashFlowWanted && call.name === 'get_cash_flow'
+                ? renderCashFlow(question.text, results[index]!.content, { now, accounts })
+                : null;
+          if (rendered) {
+            messages.push({ role: 'assistant', text: rendered, toolCalls: [] });
+            onEvent({ type: 'text', text: rendered });
+            return finish(rendered, false, 'answered');
+          }
+        }
+      }
       if (exhausted && !progressed) {
         for (const repeated of entry.repeatedCalls)
           if (repeated.occurrence >= LOOP_LIMITS.repeatLimit) repeated.action = 'terminated';
