@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.db
+*.db-shm
+*.db-wal
+# Server-side model settings (may hold a local API key).
+model-settings.json
+model-settings.json.*.tmp
+server-password

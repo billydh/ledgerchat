@@ -1,0 +1,6 @@
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+# Node 24, as .nvmrc and engines pin it: pnpm runs every script (dev, test,
+# seed, the CLIs) with this version whatever the shell's default node is.
+useNodeVersion: 24.18.1

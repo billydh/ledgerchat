@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4efe3" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>ledgerchat</title>
+    <link rel="stylesheet" href="/theme.css" />
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/overview.css" />
+  </head>
+  <body>
+    <nav class="workspace-nav" aria-label="Workspace">
+      <p class="wordmark">
+        <span class="wordmark-mark" aria-hidden="true"></span>
+        <span>Ledgerchat</span>
+      </p>
+      <div class="sidebar-actions">
+        <button id="new-chat" class="new-chat" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          <span>New chat</span>
+        </button>
+        <button id="import" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4v11m-5-5 5 5 5-5" />
+            <path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" />
+          </svg>
+          <span>Import</span>
+        </button>
+      </div>
+      <p class="nav-label" aria-hidden="true">Workspace</p>
+      <div class="nav-sections">
+        <a href="#view=overview" data-view="overview">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m3 10 9-8 9 8v11h-6v-7H9v7H3z" fill="currentColor" stroke="none" />
+          </svg>
+          <span>Overview</span>
+        </a>
+        <a href="#view=accounts" data-view="accounts">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="6" width="18" height="13" rx="2.5" />
+            <path d="M3 10.5h18M7 15.5h3" />
+          </svg>
+          <span>Accounts</span>
+        </a>
+        <a href="#view=transactions" data-view="transactions">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 3v16m-4-4 4 4 4-4M17 21V5m-4 4 4-4 4 4" />
+          </svg>
+          <span>Transactions</span>
+        </a>
+      </div>
+      <div class="nav-chat">
+        <button
+          id="chat-nav"
+          type="button"
+          data-view="chat"
+          aria-current="page"
+          aria-expanded="false"
+          aria-controls="history-panel"
+        >
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z" />
+          </svg>
+          <span>Chat</span>
+          <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </button>
+        <section class="history-panel" id="history-panel" aria-label="Saved chats" hidden>
+          <p class="history-label">Saved chats</p>
+          <p id="history-state" role="status">Loading saved chats…</p>
+          <ul id="saved-chats"></ul>
+          <button id="history-retry" type="button" hidden>Retry history</button>
+          <button id="load-more" type="button" hidden>Load more</button>
+        </section>
+      </div>
+      <div class="nav-bottom">
+        <a href="#view=settings" data-view="settings">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="m9 3 1-1h4l1 3 2 1 3-1 2 4-2 2v2l2 2-2 4-3-1-2 1-1 3h-4l-1-3-2-1-3 1-2-4 2-2v-2L2 9l2-4 3 1 2-1z"
+            />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          <span>Settings</span>
+        </a>
+        <p class="nav-footer" id="nav-footer" aria-hidden="true">
+          <span class="nav-footer-dot"></span>
+          <span class="nav-footer-lines">
+            <span id="nav-coverage">No data imported yet</span>
+          </span>
+        </p>
+      </div>
+      <select class="mobile-sections" id="mobile-sections" aria-label="Go to section">
+        <option value="overview">Overview</option>
+        <option value="accounts">Accounts</option>
+        <option value="transactions">Transactions</option>
+        <option value="chat">Chat</option>
+        <option value="settings">Settings</option>
+      </select>
+    </nav>
+    <header class="app-toolbar">
+      <div class="brand">
+        <h1>ledgerchat</h1>
+      </div>
+      <nav class="actions" aria-label="Chat and accounts">
+        <button id="categories" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="7" rx="2" />
+            <rect x="14" y="3" width="7" height="7" rx="2" />
+            <rect x="3" y="14" width="7" height="7" rx="2" />
+            <rect x="14" y="14" width="7" height="7" rx="2" />
+          </svg>
+          <span>Categories</span>
+        </button>
+      </nav>
+    </header>
+    <p class="notice" id="notice" role="alert" hidden></p>
+    <main id="chat-view">
+      <section class="workspace" aria-label="Conversation">
+        <div class="welcome" id="welcome">
+          <p class="eyebrow welcome-eyebrow">Ask your ledger</p>
+          <h2 class="display">A little clarity for your money.</h2>
+          <p>
+            Ask about a purchase, a pattern, or the month so far. Every answer is worked out from
+            the transactions you imported.
+          </p>
+          <div class="welcome-empty" id="welcome-empty" hidden>
+            <strong>Nothing to ask about yet.</strong>
+            <p>
+              Try a year of sample banking to see what ledgerchat does, or import a CSV or OFX
+              export from your bank.
+            </p>
+            <div class="welcome-actions">
+              <button id="welcome-sample" class="btn-primary" type="button">
+                Load sample data
+              </button>
+              <button id="welcome-import" class="btn-quiet" type="button">Import a file</button>
+            </div>
+          </div>
+        </div>
+        <p id="transcript-state" role="status" hidden></p>
+        <div id="messages" role="log" aria-live="polite" aria-relevant="additions text"></div>
+      </section>
+      <div class="dock">
+        <form id="chat" class="composer">
+          <label for="question" class="sr-only">Question</label
+          ><textarea
+            id="question"
+            placeholder="What would you like to know?"
+            required
+            maxlength="50000"
+            rows="2"
+          ></textarea>
+          <div class="composer-row">
+            <div class="backend-control">
+              <span class="backend-dot" id="backend-dot" aria-hidden="true"></span>
+              <label for="backend" class="sr-only">Model</label
+              ><select id="backend" aria-describedby="availability">
+                <option value="">Loading models...</option>
+              </select>
+            </div>
+            <button
+              id="send"
+              class="primary"
+              type="submit"
+              disabled
+              aria-label="Send message"
+              title="Send message"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 19V5m-6 6 6-6 6 6" />
+              </svg></button
+            ><button
+              id="stop"
+              type="button"
+              hidden
+              aria-label="Stop response"
+              title="Stop response"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="8" y="8" width="8" height="8" rx="1" fill="currentColor" stroke="none" />
+              </svg>
+            </button>
+          </div>
+          <p id="availability" hidden></p>
+          <p id="processing-note" class="processing-note"></p>
+        </form>
+        <div class="suggestions" aria-label="Starter questions">
+          <button type="button" data-question="How much have I spent this month?">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 20v-6m5 6V9m5 11V4m5 16V7" /></svg
+            ><span class="suggestion-title">This month's spending</span
+            ><span class="suggestion-hint">Total so far, and where it went</span></button
+          ><button type="button" data-question="Show my recurring charges.">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 7v5h-5M4 17v-5h5" />
+              <path d="M6 6a8 8 0 0 1 13 2l1 4M4 12l1 4a8 8 0 0 0 13 2" /></svg
+            ><span class="suggestion-title">Regular charges</span
+            ><span class="suggestion-hint">Subscriptions and bills that repeat</span></button
+          ><button type="button" data-question="What payments are coming up?">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4" y="5" width="16" height="16" rx="2" />
+              <path d="M8 3v4m8-4v4M4 11h16" /></svg
+            ><span class="suggestion-title">Coming up</span
+            ><span class="suggestion-hint">Payments expected in the next 30 days</span>
+          </button>
+        </div>
+      </div>
+    </main>
+    <section class="editor workspace-page" id="editor" aria-labelledby="editor-title" hidden>
+      <div class="editor-head">
+        <div>
+          <h2 id="editor-title" class="page-title" tabindex="-1">Transactions</h2>
+          <p class="page-lede editor-help">
+            Everything you have imported. Search, narrow it down, and select a row to correct its
+            category.
+          </p>
+        </div>
+      </div>
+      <form id="editor-search" class="editor-search" aria-label="Filters">
+        <div class="search-row">
+          <label class="search-box">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <span class="sr-only">Search description</span>
+            <input
+              id="editor-query"
+              type="search"
+              maxlength="500"
+              placeholder="Search a merchant or description, then press Enter"
+              autocomplete="off"
+            />
+          </label>
+          <button type="submit" class="btn-primary">Search</button>
+          <button type="button" id="editor-reset" class="btn-quiet">Clear</button>
+        </div>
+        <div class="period-row" role="group" aria-label="Period">
+          <button type="button" class="chip" data-preset="this_month">This month</button>
+          <button type="button" class="chip" data-preset="last_month">Last month</button>
+          <button type="button" class="chip" data-preset="last_30_days">30 days</button>
+          <button type="button" class="chip" data-preset="ytd">Year to date</button>
+          <button type="button" class="chip" data-preset="all" aria-pressed="true">All time</button>
+          <button type="button" class="chip" data-preset="custom">Custom dates</button>
+        </div>
+        <div class="filter-row">
+          <label class="field date-field" id="editor-from-field" hidden
+            ><span>From</span><input type="date" id="editor-from"
+          /></label>
+          <label class="field date-field" id="editor-to-field" hidden
+            ><span>To</span><input type="date" id="editor-to"
+          /></label>
+          <label class="field"
+            ><span>Account</span
+            ><select id="editor-account">
+              <option value="">All accounts</option>
+            </select></label
+          >
+          <label class="field"
+            ><span>Category</span
+            ><select id="editor-filter">
+              <option value="">Any category</option>
+            </select></label
+          >
+          <label class="field"
+            ><span>Sort</span
+            ><select id="editor-sort">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="largest">Largest amount first</option>
+              <option value="smallest">Smallest amount first</option>
+            </select></label
+          >
+        </div>
+      </form>
+      <div class="results-bar">
+        <p id="editor-results-state" role="status" class="editor-state"></p>
+        <p id="editor-totals" class="editor-totals" aria-live="polite"></p>
+      </div>
+      <p class="ledger-scroll-hint">Scroll the table sideways to see every column.</p>
+      <div
+        class="editor-table-scroll"
+        tabindex="0"
+        role="region"
+        aria-label="Transaction results, scroll horizontally for more columns"
+      >
+        <table class="editor-results table" id="editor-results" hidden>
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Description</th>
+              <th scope="col">Account</th>
+              <th scope="col" class="num">Amount</th>
+              <th scope="col">Category</th>
+            </tr>
+          </thead>
+          <tbody id="editor-rows"></tbody>
+        </table>
+      </div>
+      <button id="editor-more" class="btn-quiet" type="button" hidden>Show more</button>
+      <aside class="editor-panel drawer" id="editor-panel" hidden aria-label="Review transaction">
+        <div class="drawer-head">
+          <div>
+            <p class="eyebrow">Review transaction</p>
+            <h3 id="editor-panel-title" class="drawer-title"></h3>
+            <p id="editor-panel-meta" class="drawer-meta"></p>
+          </div>
+          <button type="button" class="icon-btn drawer-close" id="editor-close" aria-label="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+        <form id="editor-apply" class="editor-apply">
+          <p id="transaction-provenance" class="transaction-provenance"></p>
+          <div class="editor-transfer">
+            <p id="editor-transfer-note"></p>
+            <button type="button" class="btn-quiet" id="editor-transfer-toggle"></button>
+          </div>
+          <div class="editor-fields">
+            <label class="field" for="editor-category"
+              ><span>Category</span>
+              <select id="editor-category" required>
+                <option value="">Choose a category</option>
+              </select>
+            </label>
+            <label class="field" for="editor-subcategory"
+              ><span>Subcategory</span>
+              <select id="editor-subcategory" required disabled>
+                <option value="">Choose a subcategory</option>
+              </select>
+            </label>
+          </div>
+          <fieldset class="editor-scope">
+            <legend>Apply to</legend>
+            <label
+              ><input type="radio" name="scope" value="transaction" checked />
+              <span>This transaction only</span></label
+            >
+            <label
+              ><input type="radio" name="scope" value="description" />
+              <span id="editor-scope-description">Every matching description</span></label
+            >
+          </fieldset>
+          <div class="editor-buttons">
+            <button type="submit" class="btn-primary" id="editor-save">Save</button>
+            <button type="button" class="btn-quiet" id="editor-cancel">Cancel</button>
+          </div>
+          <details class="editor-options" id="editor-options" hidden>
+            <summary>Saved corrections for this transaction</summary>
+            <div class="editor-buttons">
+              <button type="button" class="btn-danger btn-sm" id="editor-remove-override" hidden>
+                Remove this correction
+              </button>
+              <button type="button" class="btn-danger btn-sm" id="editor-remove-rule" hidden>
+                Remove matching-description rule
+              </button>
+            </div>
+          </details>
+        </form>
+        <p id="editor-panel-state" role="status" class="editor-state"></p>
+      </aside>
+    </section>
+    <section
+      class="editor workspace-page"
+      id="accounts-view"
+      aria-labelledby="accounts-title"
+      hidden
+    >
+      <div class="editor-head">
+        <div>
+          <h2 id="accounts-title" class="page-title" tabindex="-1">Accounts</h2>
+          <p class="page-lede editor-help">
+            Your data is as current as your latest statement. Import a newer file to bring it up to
+            date.
+          </p>
+        </div>
+        <button type="button" id="accounts-import" class="btn-primary">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4v11m-5-5 5 5 5-5" />
+            <path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" />
+          </svg>
+          <span>Import a file</span>
+        </button>
+      </div>
+      <p id="account-status" role="status" class="account-state" hidden></p>
+      <button type="button" id="accounts-retry" class="btn-quiet" hidden>Retry</button>
+      <div id="account-summary" class="stats account-summary reveal" aria-label="Totals"></div>
+      <div id="account-categorise" class="account-categorise" hidden>
+        <div>
+          <p id="account-categorise-hint">Uncategorised transactions are ready to label.</p>
+          <p id="account-categorise-state" role="status" aria-live="polite"></p>
+        </div>
+        <button type="button" id="account-categorise-now" class="btn-primary">
+          Categorise now
+        </button>
+      </div>
+      <div class="accounts-grid">
+        <div>
+          <h3 class="section-label" id="account-list-title">Your accounts</h3>
+          <div id="account-list" class="account-list" aria-labelledby="account-list-title"></div>
+        </div>
+        <div>
+          <h3 id="account-import-title" class="section-label">Latest import</h3>
+          <section
+            id="account-import"
+            class="card card-pad import-card"
+            aria-labelledby="account-import-title"
+          >
+            <div id="account-import-body"></div>
+          </section>
+        </div>
+      </div>
+      <p class="account-footnote">
+        Dates are what your imported files contain, not proof of a complete history. Import times
+        are shown in your local time.
+      </p>
+    </section>
+
+    <dialog class="editor importer" id="importer" aria-labelledby="importer-title">
+      <div class="editor-head">
+        <div>
+          <p class="eyebrow">Import</p>
+          <h2 id="importer-title" class="display">Bring in a statement</h2>
+        </div>
+        <button id="importer-close" class="icon-btn" type="button" aria-label="Close import">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+      </div>
+      <p class="editor-help" id="importer-help">
+        A CSV or OFX/QFX export from your bank. The file stays on this machine and is read in
+        memory; nothing is written until you press Import.
+      </p>
+      <ol class="importer-steps" id="importer-steps">
+        <li data-step="file"><i>1</i><span>File</span></li>
+        <li data-step="account"><i>2</i><span>Account</span></li>
+        <li data-step="preview"><i>3</i><span>Preview</span></li>
+        <li data-step="result"><i>4</i><span>Done</span></li>
+      </ol>
+      <p id="importer-state" role="status" class="editor-state"></p>
+      <section id="step-file" aria-label="Choose a file">
+        <label class="dropzone" id="dropzone">
+          <input
+            id="importer-input"
+            type="file"
+            accept=".csv,.ofx,.qfx,text/csv,application/x-ofx"
+          />
+          <svg class="dropzone-glyph" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+            <path d="M14 3v5h5M12 11v6m-3-3 3 3 3-3" />
+          </svg>
+          <strong>Choose a file or drop it here</strong>
+          <span>CSV, OFX or QFX, up to 20 MB</span>
+        </label>
+      </section>
+      <section id="step-account" aria-label="Choose the account" hidden>
+        <p class="importer-file" id="importer-file"></p>
+        <div class="importer-panel">
+          <div class="importer-fields">
+            <label class="field importer-field"
+              ><span>Account</span>
+              <select id="importer-account"></select>
+            </label>
+          </div>
+          <div class="importer-fields" id="importer-new-account" hidden>
+            <label class="field importer-field"
+              ><span>Name</span>
+              <input id="importer-account-name" maxlength="100" placeholder="Everyday" />
+            </label>
+            <label class="field importer-field"
+              ><span>Type</span>
+              <select id="importer-account-type">
+                <option value="transaction">Transaction</option>
+                <option value="savings">Savings</option>
+                <option value="credit_card">Credit card</option>
+                <option value="loan">Loan</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label class="field importer-field"
+              ><span>Currency</span>
+              <input id="importer-account-currency" maxlength="3" value="AUD" />
+            </label>
+          </div>
+          <div class="importer-buttons">
+            <button type="button" class="btn-primary" id="importer-account-next">Continue</button>
+            <button type="button" class="btn-quiet" id="importer-account-back">
+              Choose another file
+            </button>
+          </div>
+        </div>
+      </section>
+      <section id="step-preview" aria-label="Preview" hidden>
+        <p class="importer-file" id="importer-preview-file"></p>
+        <details id="mapping-advanced" class="importer-advanced" hidden>
+          <summary>Column, date and sign settings</summary>
+          <div class="editor-table-scroll">
+            <table class="mapping table">
+              <thead>
+                <tr>
+                  <th scope="col">Role</th>
+                  <th scope="col">Column</th>
+                  <th scope="col">Confidence</th>
+                </tr>
+              </thead>
+              <tbody id="mapping-rows"></tbody>
+            </table>
+          </div>
+          <div class="importer-toggles" id="mapping-amount-kind">
+            <label
+              ><input type="radio" name="amount-kind" value="signed" /> One signed amount
+              column</label
+            >
+            <label
+              ><input type="radio" name="amount-kind" value="split" /> Separate debit and credit
+              columns</label
+            >
+          </div>
+          <div class="importer-toggles" id="mapping-sign">
+            <label
+              ><input type="radio" name="sign" value="spend_negative" /> Spending is negative</label
+            >
+            <label
+              ><input type="radio" name="sign" value="spend_positive" /> Spending is positive</label
+            >
+          </div>
+          <div class="importer-fields">
+            <label class="field importer-field"
+              ><span>Date format</span>
+              <select id="mapping-date-format">
+                <option>YYYY-MM-DD</option>
+                <option>DD/MM/YYYY</option>
+                <option>MM/DD/YYYY</option>
+                <option>DD-MM-YYYY</option>
+                <option>DD MMM YYYY</option>
+              </select>
+            </label>
+          </div>
+          <p class="importer-hint" id="mapping-hint"></p>
+        </details>
+
+        <p class="importer-summary" id="preview-summary"></p>
+        <p class="importer-hint" id="preview-balance"></p>
+        <details class="importer-errors" id="preview-errors" hidden>
+          <summary id="preview-errors-summary"></summary>
+          <ul id="preview-error-list"></ul>
+        </details>
+        <div class="editor-table-scroll">
+          <table class="preview-rows table">
+            <thead>
+              <tr>
+                <th scope="col">Line</th>
+                <th scope="col">Date</th>
+                <th scope="col">Description</th>
+                <th scope="col" class="num">Amount</th>
+                <th scope="col"></th>
+              </tr>
+            </thead>
+            <tbody id="preview-rows"></tbody>
+          </table>
+        </div>
+        <div class="importer-buttons">
+          <button type="button" class="btn-primary" id="importer-run">Import</button>
+          <button type="button" class="btn-quiet" id="importer-preview-back">Back</button>
+        </div>
+      </section>
+      <section id="step-result" aria-label="Result" hidden>
+        <div class="importer-result" id="import-result"></div>
+        <div class="importer-panel" id="categorise-panel">
+          <p class="importer-hint" id="categorise-hint">
+            New descriptions are unlabelled until the model categorises them.
+          </p>
+          <div class="progress" id="categorise-progress" hidden><i></i></div>
+          <p class="importer-hint" id="categorise-state"></p>
+          <div class="importer-buttons">
+            <button type="button" class="btn-primary" id="categorise-now">Categorise now</button>
+            <button type="button" class="btn-quiet" id="importer-another">
+              Import another file
+            </button>
+            <button type="button" class="btn-quiet" id="importer-review">
+              Review transactions
+            </button>
+            <button type="button" class="btn-quiet" id="importer-done">Done</button>
+          </div>
+        </div>
+      </section>
+    </dialog>
+    <dialog class="editor importer sample-dialog" id="sample-dialog" aria-labelledby="sample-title">
+      <div class="editor-head">
+        <div>
+          <p class="eyebrow">Sample data</p>
+          <h2 id="sample-title" class="display">A year of someone else's money.</h2>
+        </div>
+      </div>
+      <p class="editor-help" id="sample-help">
+        Twelve months of made-up banking for one person in Sydney: an everyday account, a savings
+        account and a credit card, about 780 transactions in AUD. The files go through the same
+        importer as a real export, then the model labels each description. Nothing here is real.
+      </p>
+      <div class="progress" id="sample-progress" hidden><i></i></div>
+      <ul class="sample-steps" id="sample-steps" hidden></ul>
+      <p id="sample-state" role="status" class="editor-state"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-quiet" id="sample-cancel">Cancel</button>
+        <button type="button" class="btn-primary" id="sample-load">Load sample data</button>
+        <button type="button" class="btn-primary" id="sample-done" hidden>Start asking</button>
+      </div>
+    </dialog>
+    <button class="jump-latest btn-quiet btn-sm" id="jump-latest" type="button" hidden>
+      Back to latest
+    </button>
+    <script type="module" src="/app.js"></script>
+    <script type="module" src="/overview.js"></script>
+    <script type="module" src="/settings.js"></script>
+  </body>
+</html>

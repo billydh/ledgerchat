@@ -1,0 +1,10 @@
+{
+  "id": "chatcmpl-test", "object": "chat.completion", "created": 0, "model": "test",
+  "choices": [{ "index": 0, "finish_reason": "tool_calls", "message": {
+    "role": "assistant", "content": "Checking both accounts.",
+    "tool_calls": [
+      { "id": "call_a", "type": "function", "function": { "name": "search", "arguments": "{\"account\":\"a\"}" } },
+      { "id": "call_b", "type": "function", "function": { "name": "search", "arguments": "{\"account\":\"b\"}" } }
+    ]
+  }}], "usage": { "prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20 }
+}

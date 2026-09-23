@@ -1,0 +1,47 @@
+{
+  "name": "ledgerchat",
+  "version": "0.1.0",
+  "description": "Ask questions about your bank transactions in plain language, answered by a local model that never leaves your machine.",
+  "license": "Elastic-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@11.15.1",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/server/app.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
+    "start": "node --env-file-if-exists=.env dist/src/server/app.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "seed": "tsx --env-file-if-exists=.env src/cli/seed.ts",
+    "import:file": "tsx --env-file-if-exists=.env src/cli/import.ts",
+    "categorise": "tsx --env-file-if-exists=.env src/cli/categorise.ts",
+    "chat": "tsx --env-file-if-exists=.env src/cli/chat.ts",
+    "auth:show": "tsx --env-file-if-exists=.env src/cli/auth.ts"
+  },
+  "dependencies": {
+    "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
+    "@fontsource-variable/fraunces": "^5.3.0",
+    "@fontsource/dm-mono": "^5.3.0",
+    "@hono/node-server": "^2.1.1",
+    "better-sqlite3": "^13.0.3",
+    "hono": "^4.13.7",
+    "openai": "^7.12.1",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.5.0",
+    "eslint": "^10.10.0",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.13",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^5.0.0"
+  }
+}
