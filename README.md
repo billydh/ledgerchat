@@ -15,6 +15,13 @@ data only to the model endpoint you configure, which must use `localhost`,
 `127.0.0.1` or `[::1]`. Use a model server you trust, since it controls any
 onward processing.
 
+## Demo
+
+A walkthrough of import, the spending overview, transactions and chat, using
+synthetic sample data.
+
+https://github.com/user-attachments/assets/0daf534d-c37b-4072-a225-c85458853996
+
 ## What is in it
 
 - **Overview**: spending, income and what is left for a period, where the
